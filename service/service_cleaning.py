@@ -29,19 +29,37 @@ class ServiceTransaction:
         self.service_polars = service_polars
 
     
-    async def process_excel_users(self, file: UploadFile):
+    async def process_excel_users(
+        self, 
+        file: UploadFile,
+        filtered: str = None,
+        product: str = None,
+        state: str = None,
+        city: str = None,
+        method: str = None
+    ):
 
         contents = await file.read()
         df = pl.read_excel(io.BytesIO(contents))
 
         list_city = await self.repo_city.get_list_city()
 
+        # Cleaning data seperti biasa
         df = self.service_polars.execute_all(
                 department='Retailer',
                 dataframe=df,
                 list_normalize=list_city,
-            
             )
+
+        if filtered == 'true':
+            if product and product != 'all':
+                df = df.filter(pl.col("Product") == product)
+            if state and state != 'all':
+                df = df.filter(pl.col("State") == state)
+            if city and city != 'all':
+                df = df.filter(pl.col("City") == city)
+            if method and method != 'all':
+                df = df.filter(pl.col("Sales Method") == method)
 
         city_map = await self.repo_city.get_map_city()
         method_map = await self.repo_method.get_map_method()
@@ -55,8 +73,6 @@ class ServiceTransaction:
             product_id = product_map.get(row["Product"])
             retailer_id = retailer_map.get(row["Retailer"])
             method_id = method_map.get(row["Sales Method"])
-
-            print(row['Retailer'])
 
             transaction_entry = {
                 "id_city": city_id,
@@ -74,6 +90,8 @@ class ServiceTransaction:
         
         print(f"DEBUG: Data siap insert = {len(transactions_to_insert)} baris")
 
-        return await self.repo_transaction.insert_transactions(transactions_to_insert)
+        # Cegah insert jika data kosong setelah di-filter
+        if not transactions_to_insert:
+            return []
 
-        
+        return await self.repo_transaction.insert_transactions(transactions_to_insert)
